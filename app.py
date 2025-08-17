@@ -33,10 +33,8 @@ CORS(
 )
 
 def token_required(f):
-    @wraps(f)
     def decorator(*args, **kwargs):
         token = None
-
         if 'Authorization' in request.headers:
             token = request.headers['Authorization'].split(" ")[1]
 
@@ -53,6 +51,7 @@ def token_required(f):
             if not user_doc.exists:
                 return jsonify({'message': 'User not found'}), 404
             g.user = user_doc.to_dict()
+            g.user['id'] = user_id
         except ExpiredSignatureError:
             # Specifically catch the expired token
             return jsonify({'message': 'Token has expired'}), 401
@@ -64,6 +63,7 @@ def token_required(f):
             return jsonify({'message': str(e)}), 500
 
         return f(*args, **kwargs)
+    decorator.__name__ = f.__name__
     return decorator
 
 
@@ -77,6 +77,10 @@ def get_user(user_id):
         return jsonify({'message': 'Unauthorized'}), 401
     
     return jsonify({'user': g.user})
+
+@app.route("/health")
+def index():
+    return "Hello, World!"
 
 if __name__ == "__main__":
     app.run(debug=True)
