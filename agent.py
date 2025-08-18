@@ -142,7 +142,7 @@ async def suggestNewsSources(topic : str, client: OpenRouterClient):
     """Suggest news sources for a topic and validate URLs asynchronously."""
     prompt = createSuggestionPrompt(topic)
     
-    response = client.generateStructuredOutput(prompt, schema=sources_schema)
+    response = client.generateStructuredOutput(prompt, schema=sources_schema, online=True)
     
     # Validate URLs concurrently
     sources = response.get("sources", [])
@@ -198,7 +198,7 @@ async def provideNews_async(sources: list[dict[str, str]], client: OpenRouterCli
     
     return summaries
 
-async def provideNews_advanced(sources: list[dict[str, str]], client: OpenRouterClient) -> List[Dict[str, Any]]:
+async def provideNews_advanced(sources: list[str], client: OpenRouterClient) -> List[Dict[str, Any]]:
     """Advanced news processing with categorization and summary generation.
     
     Args:
@@ -213,7 +213,7 @@ async def provideNews_advanced(sources: list[dict[str, str]], client: OpenRouter
         
         # Fetch HTML content from all provided sources concurrently
         html_content = [
-            {"url": source["url"], "content": fetch_webpage_python(source["url"])}
+            {"url": source, "content": fetch_webpage_python(source)}
             for source in sources
         ]
         
@@ -400,6 +400,7 @@ def provideNews(sources: list[dict[str, str]], client: OpenRouterClient):
 
 async def main():
     """Main function to test the async news source suggestion."""
+    client = OpenRouterClient("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", "google/gemini-flash-1.5-8b")    
     time_taken = []
     for i in range(1):
         start_time = time.time()

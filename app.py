@@ -1,11 +1,16 @@
 from flask import Flask, request, jsonify, g
-from functools import wraps
+from firebase_admin.firestore import transactional
 from firebase_admin import credentials, firestore, initialize_app
 import jwt
 from jwt import ExpiredSignatureError, DecodeError, InvalidTokenError
 from google.cloud import secretmanager
 from flask_cors import CORS
 import json
+from agent import provideNews_advanced, suggestNewsSources
+from openrouterClient import OpenRouterClient
+import asyncio
+from datetime import datetime, timezone
+
 
 _client = secretmanager.SecretManagerServiceClient()
 _project_id = "news-467923" # or hard‐code your project test
@@ -24,6 +29,8 @@ cred = credentials.Certificate(firebase_cred)
 initialize_app(cred)
 db = firestore.client()
 transaction = db.transaction()
+
+llm_client = OpenRouterClient("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", "google/gemini-flash-1.5-8b")
 
 app = Flask(__name__)
 CORS(
@@ -70,17 +77,124 @@ def token_required(f):
 
 
 
-@app.route("/users/<user_id>")
+@app.route("/user")
 @token_required
-def get_user(user_id):
-    if g.user['id'] != user_id:
-        return jsonify({'message': 'Unauthorized'}), 401
-    
+def get_user():
     return jsonify({'user': g.user})
 
 @app.route("/health")
 def index():
     return "Hello, World!"
+
+# Option 1: Using asyncio.run() (Simple but creates new event loop each time)
+@app.route("/suggest-sources", methods=["POST"])
+@token_required
+def suggest_sources():
+    """Suggest news sources for a given topic using asyncio.run()"""
+    try:
+        data = request.get_json()
+        topic = data.get('topic')
+        
+        if not topic:
+            return jsonify({'error': 'Topic is required'}), 400
+        
+        # This creates a new event loop for each request - not optimal for production
+        sources = asyncio.run(suggestNewsSources(topic, llm_client))
+        
+        return jsonify({
+            'topic': topic,
+            'sources': sources,
+            'count': len(sources)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@transactional
+def update_news(txn, user_id, summaries):
+    user_ref = db.collection('users').document(user_id)
+    txn.update(user_ref, {'summary_runs': firestore.ArrayUnion([{
+        'date_and_time': datetime.now(timezone.utc),
+        'summaries': summaries
+    }])})
+    return user_id
+
+# Option 3: Advanced news processing endpoint
+@app.route("/generate-news", methods=["POST"])
+@token_required
+def generate_news():
+    """Generate categorized news summaries from sources"""
+    try:
+        data = request.get_json()
+        sources = data.get('sources', [])
+        
+        if not sources:
+            return jsonify({'error': 'Sources array is required'}), 400
+        app.logger.info(f"Generating news for sources: {sources}")
+        summaries = asyncio.run(provideNews_advanced(sources, llm_client))
+        
+        update_news(transaction, g.user['id'], summaries)
+
+        return jsonify({
+            'summaries': summaries,
+            'date_and_time': datetime.now(timezone.utc)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@transactional
+def update_sources(txn, user_id, sources):
+    user_ref = db.collection('users').document(user_id)
+    
+    txn.update(user_ref, {'sources': sources})
+        
+    return user_id
+
+@app.route("/update-sources", methods=["POST"])
+@token_required
+def update_sources_sync():
+    data = request.get_json()
+    user_id = g.user['id']
+    sources = data.get('sources', [])
+    
+    # Validate sources format
+    if not isinstance(sources, list):
+        return jsonify({'error': 'Sources must be an array'}), 400
+    
+    # Create filtered sources with only required fields
+    filtered_sources = []
+    required_fields = ['description', 'name', 'url']
+    
+    for i, source in enumerate(sources):
+        if not isinstance(source, dict):
+            return jsonify({'error': f'Source at index {i} must be an object'}), 400
+        
+        for field in required_fields:
+            if field not in source:
+                return jsonify({'error': f'Source at index {i} is missing required field: {field}'}), 400
+            if not isinstance(source[field], str):
+                return jsonify({'error': f'Source at index {i} field "{field}" must be a string'}), 400
+            if not source[field].strip():
+                return jsonify({'error': f'Source at index {i} field "{field}" cannot be empty'}), 400
+        
+        # Create filtered source with only the required fields
+        filtered_source = {field: source[field] for field in required_fields}
+        
+        filtered_sources.append(filtered_source)
+    # Filter out duplicate URLs
+    seen_urls = set()
+    unique_sources = []
+    
+    for source in filtered_sources:
+        if source['url'] not in seen_urls:
+            seen_urls.add(source['url'])
+            unique_sources.append(source)
+    
+    filtered_sources = unique_sources
+    update_sources(transaction, user_id, filtered_sources)
+    return jsonify({'new_sources': filtered_sources}), 200
 
 if __name__ == "__main__":
     app.run(debug=True)
