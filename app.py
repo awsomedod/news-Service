@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, Response
 from firebase_admin.firestore import transactional
 from firebase_admin import credentials, firestore, initialize_app
 import jwt
@@ -6,7 +6,7 @@ from jwt import ExpiredSignatureError, DecodeError, InvalidTokenError
 from google.cloud import secretmanager
 from flask_cors import CORS
 import json
-from agent import provideNews_advanced, suggestNewsSources
+from agent import suggestNewsSources, generate_topics, generate_topic_summary
 from openrouterClient import OpenRouterClient
 import asyncio
 from datetime import datetime, timezone
@@ -143,6 +143,51 @@ def generate_news():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# @app.route("/generate-news-stream", methods=["POST"])
+# @token_required
+# def generate_news_stream():
+#     """Stream news summaries as they're generated"""
+#     try:
+#         data = request.get_json()
+#         sources = data.get('sources', [])
+        
+#         def generate_summaries():
+#             # First generate topics to get the correct count
+#             topics = generate_topics(sources, llm_client)
+            
+#             # Now send start message with correct topic count
+            
+#             summaries = []
+#             for i, topic in enumerate(topics):
+#                 # Generate single summary
+#                 summary = asyncio.run(generate_topic_summary(topic, llm_client))
+#                 summaries.append(summary)
+                
+#                 # Stream immediately with correct totals
+#                 yield f"data: {json.dumps({
+#                     'type': 'summary',
+#                     'summary': summary,
+#                     'index': i,
+#                     'completed': i + 1,
+#                     'total': len(topics)  # Fixed: use len(topics) instead of len(sources)
+#                 })}\n\n"
+            
+#             # Save to database
+#             update_news(transaction, g.user['id'], summaries)
+            
+#             # Complete
+#             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+        
+#         return Response(generate_summaries(), mimetype='text/event-stream', headers={
+#             'Cache-Control': 'no-cache',
+#             'Connection': 'keep-alive',
+#             'Access-Control-Allow-Origin': '*',
+#             'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+#         })
+#     except Exception as e:
+#         return jsonify({'error': str(e)}), 500
 
 @transactional
 def update_sources(txn, user_id, sources):

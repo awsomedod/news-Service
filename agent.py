@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from webReader import fetch_webpage_python
+import json
 
 @dataclass
 class Topic:
@@ -198,16 +199,8 @@ async def provideNews_async(sources: list[dict[str, str]], client: OpenRouterCli
     
     return summaries
 
-async def provideNews_advanced(sources: list[str], client: OpenRouterClient) -> List[Dict[str, Any]]:
-    """Advanced news processing with categorization and summary generation.
-    
-    Args:
-        sources: List of URL strings to process
-        client: OpenRouter client for LLM interactions
-        
-    Returns:
-        List of news summary dictionaries with id, title, summary, and image
-    """
+def generate_topics(sources: list[str], client: OpenRouterClient) -> List[Dict[str, Any]]:
+    """Generate topics for a list of sources."""
     try:
         print('Starting provideNews_advanced function with sources:', sources)
         
@@ -338,52 +331,47 @@ async def provideNews_advanced(sources: list[str], client: OpenRouterClient) -> 
                         new_topic = Topic(name=topic_name, sources=sources_list)
                         persistent_memory.append(new_topic)
                         print('Created new topic due to missing reference')
-
-        # Generate summaries for all topics asynchronously (as requested)
-        news_summary_response_items = []
-        print('Starting summary generation for all topics')
-        
-        async def generate_topic_summary(topic: Topic) -> Dict[str, Any]:
-            """Generate summary for a single topic."""
-            print('Generating summary for topic:', topic.name)
-            
-            # Fetch HTML content for all sources in this topic
-            relevant_html_content = [fetch_webpage_python(source) for source in topic.sources]
-            print('Fetched HTML content for all sources in topic')
-            
-            summary_prompt = create_summary_prompt(topic.name, relevant_html_content)
-            print('Created summary prompt')
-            
-            # Generate summary using thread pool (since client is synchronous)
-            loop = asyncio.get_running_loop()
-            summary_response = await loop.run_in_executor(
-                None,
-                client.generateStructuredOutput,
-                summary_prompt,
-                news_summary_response_schema
-            )
-            print('Received summary from LLM')
-            
-
-            
-            print('--------------------------------')
-            print(topic.name)
-            print(topic.sources)
-            print(summary_response.get("summary", "No summary"))
-            print(summary_response.get("image", "No image"))
-            
-            return summary_response
-        
-        # Generate all summaries concurrently
-        if persistent_memory:
-            summary_tasks = [generate_topic_summary(topic) for topic in persistent_memory]
-            news_summary_response_items = await asyncio.gather(*summary_tasks)
-        
-        return news_summary_response_items
-        
+            yield persistent_memory
     except Exception as error:
         print('Error generating news summary:', error)
         raise
+
+
+
+
+        
+async def generate_topic_summary(topic: Topic, client: OpenRouterClient) -> Dict[str, Any]:
+    """Generate summary for a single topic."""
+    print('Generating summary for topic:', topic.name)
+    
+    # Fetch HTML content for all sources in this topic
+    relevant_html_content = [fetch_webpage_python(source) for source in topic.sources]
+    print('Fetched HTML content for all sources in topic')
+    
+    summary_prompt = create_summary_prompt(topic.name, relevant_html_content)
+    print('Created summary prompt')
+    
+    # Generate summary using thread pool (since client is synchronous)
+    loop = asyncio.get_running_loop()
+    summary_response = await loop.run_in_executor(
+        None,
+        client.generateStructuredOutput,
+        summary_prompt,
+        news_summary_response_schema
+    )
+    print('Received summary from LLM')
+    
+
+    
+    print('--------------------------------')
+    print(topic.name)
+    print(topic.sources)
+    print(summary_response.get("summary", "No summary"))
+    print(summary_response.get("image", "No image"))
+    
+    return summary_response
+        
+
 
 def provideNews(sources: list[dict[str, str]], client: OpenRouterClient):
     """Synchronous version for backward compatibility."""
@@ -397,24 +385,3 @@ def provideNews(sources: list[dict[str, str]], client: OpenRouterClient):
         """
         response = client.generateText(prompt)
         print(response)
-
-async def main():
-    """Main function to test the async news source suggestion."""
-    client = OpenRouterClient("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", "google/gemini-flash-1.5-8b")    
-    time_taken = []
-    for i in range(1):
-        start_time = time.time()
-        validatedSources = await suggestNewsSources("basketball", client)
-        advancedNews = await provideNews_advanced(validatedSources, client)
-        end_time = time.time()
-        print(f"Time taken: {end_time - start_time} seconds")
-        time_taken.append(end_time - start_time)
-        print(f"Validated sources: {len(validatedSources)}")
-
-        print("-"*100)
-    average_time = sum(time_taken) / len(time_taken)
-    print(f"Average time taken: {average_time} seconds")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
