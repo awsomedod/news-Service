@@ -6,7 +6,7 @@ from jwt import ExpiredSignatureError, DecodeError, InvalidTokenError
 from google.cloud import secretmanager
 from flask_cors import CORS
 import json
-from agent import suggestNewsSources, generate_topics, generate_topic_summary
+from agent import suggestNewsSources, provideNews_advanced
 from openrouterClient import OpenRouterClient
 import asyncio
 from datetime import datetime, timezone
@@ -30,7 +30,8 @@ initialize_app(cred)
 db = firestore.client()
 transaction = db.transaction()
 
-llm_client = OpenRouterClient("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", "google/gemini-flash-1.5-8b")
+OPENROUTER_API_KEY = get_secret("OPENROUTER_API_KEY")
+llm_client = OpenRouterClient(OPENROUTER_API_KEY, "google/gemini-flash-1.5-8b")
 
 app = Flask(__name__)
 CORS(

@@ -370,18 +370,190 @@ async def generate_topic_summary(topic: Topic, client: OpenRouterClient) -> Dict
     print(summary_response.get("image", "No image"))
     
     return summary_response
+
+async def provideNews_advanced(sources: list[str], client: OpenRouterClient) -> List[Dict[str, Any]]:
+    """Advanced news processing with categorization and summary generation.
+    
+    Args:
+        sources: List of URL strings to process
+        client: OpenRouter client for LLM interactions
         
+    Returns:
+        List of news summary dictionaries with id, title, summary, and image
+    """
+    try:
+        print('Starting provideNews_advanced function with sources:', sources)
+        
+        # Fetch HTML content from all provided sources concurrently
+        html_content = [
+            {"url": source, "content": fetch_webpage_python(source)}
+            for source in sources
+        ]
+        
+        print('Fetched HTML content from all sources')
 
+        # Initialize persistent memory to track topics across content items
+        persistent_memory: List[Topic] = []
+        print('Initialized empty persistent_memory')
 
-def provideNews(sources: list[dict[str, str]], client: OpenRouterClient):
-    """Synchronous version for backward compatibility."""
-    webpages = fetch_webpages(sources)
-    for webpage in webpages:
-        prompt = f"""You are a news expert. You will provide a news summary based on the following webpage:
+        # Process each content item and categorize it into topics (SYNCHRONOUSLY as requested)
+        for content_item in html_content:
+            print('Processing content from URL:', content_item["url"])
+            
+            prompt = create_categorization_prompt(persistent_memory, content_item["content"])
+            print('Created categorization prompt')
+            
+            # Run categorization synchronously using thread pool
+            categorization_response = client.generateStructuredOutput(prompt, categorization_response_schema)
+            print('Received categorization response from LLM')
 
-        {webpage}
+            # Skip processing if no valid assignments or if content should be skipped
+            if (not categorization_response or 
+                not categorization_response.get("assignments") or 
+                len(categorization_response.get("assignments", [])) == 0 or 
+                categorization_response.get("skip", False)):
+                
+                print('--------------------------------======================--------------------------------')
+                print(categorization_response)
+                print('No valid assignments received, skipping content item')
+                print('Skipping content item:', content_item["url"])
+                print('--------------------------------======================--------------------------------')
+                continue
 
-        Provide a news summary of the webpage. The summary should be 500 words or less.
-        """
-        response = client.generateText(prompt)
-        print(response)
+            # Filter out invalid URLs from further readings
+            for assignment in categorization_response["assignments"]:
+                if "furtherReadings" in assignment and assignment["furtherReadings"]:
+                    assignment["furtherReadings"] = [
+                        url for url in assignment["furtherReadings"] 
+                        if isValidUrl(url)
+                    ]
+            print('Filtered invalid URLs from further readings')
+
+            print('Processing assignments:', categorization_response["assignments"])
+
+            # Process each topic assignment
+            for assignment in categorization_response["assignments"]:
+                topic_name = assignment["topicName"]
+                is_new = assignment["isNew"]
+                further_readings = assignment.get("furtherReadings", [])
+                
+                print('Processing assignment for topic:', topic_name)
+
+                # Skip invalid topic names
+                if not topic_name or topic_name.strip() == "":
+                    print('Invalid topic name, skipping assignment')
+                    continue
+
+                # Find existing topic with case-insensitive matching
+                topic = next((t for t in persistent_memory if t.name.lower() == topic_name.lower()), None)
+                print('Found existing topic?', topic is not None)
+
+                if is_new:
+                    # Handle new topic creation
+                    if topic:
+                        print('LLM suggested new topic but found existing one with same name')
+                        # LLM suggested creating a new topic, but one with the same name already exists.
+                        # We'll treat this as adding to the existing topic.
+                        if content_item["url"] not in topic.sources:
+                            topic.sources.append(content_item["url"])
+                            print('Added new source to existing topic')
+                        else:
+                            print('Source already exists in topic')
+                        
+                        # Add furtherReadings to existing topic if provided
+                        if further_readings:
+                            print('Processing further readings for existing topic')
+                            for url in further_readings:
+                                if url not in topic.sources:
+                                    topic.sources.append(url)
+                                    print('Added further reading URL to topic:', url)
+                    else:
+                        print('Creating new topic:', topic_name)
+                        # Create new topic
+                        sources_list = [content_item["url"]]
+                        
+                        # Add furtherReadings to new topic if provided
+                        if further_readings:
+                            print('Adding further readings to new topic')
+                            sources_list.extend(further_readings)
+                        
+                        new_topic = Topic(name=topic_name, sources=sources_list)
+                        persistent_memory.append(new_topic)
+                        print('New topic created and added to persistent_memory')
+                else:
+                    # Handle existing topic assignment
+                    if topic:
+                        print('Adding to existing topic:', topic_name)
+                        # Categorize into existing topic
+                        if content_item["url"] not in topic.sources:
+                            topic.sources.append(content_item["url"])
+                            print('Added new source to topic')
+                        
+                        # Add furtherReadings to existing topic if provided
+                        if further_readings:
+                            print('Processing further readings for existing topic')
+                            for url in further_readings:
+                                if url not in topic.sources:
+                                    topic.sources.append(url)
+                                    print('Added further reading URL:', url)
+                    else:
+                        print('LLM indicated existing topic but not found, creating new:', topic_name)
+                        # LLM said it's existing, but we couldn't find it.
+                        # This could be an LLM error or a slight naming mismatch.
+                        # Safest to create it as new.
+                        sources_list = [content_item["url"]]
+                        
+                        # Add furtherReadings to new topic if provided
+                        if further_readings:
+                            print('Adding further readings to new topic')
+                            sources_list.extend(further_readings)
+                        
+                        new_topic = Topic(name=topic_name, sources=sources_list)
+                        persistent_memory.append(new_topic)
+                        print('Created new topic due to missing reference')
+
+        # Generate summaries for all topics asynchronously (as requested)
+        news_summary_response_items = []
+        print('Starting summary generation for all topics')
+        
+        async def generate_topic_summary(topic: Topic) -> Dict[str, Any]:
+            """Generate summary for a single topic."""
+            print('Generating summary for topic:', topic.name)
+            
+            # Fetch HTML content for all sources in this topic
+            relevant_html_content = [fetch_webpage_python(source) for source in topic.sources]
+            print('Fetched HTML content for all sources in topic')
+            
+            summary_prompt = create_summary_prompt(topic.name, relevant_html_content)
+            print('Created summary prompt')
+            
+            # Generate summary using thread pool (since client is synchronous)
+            loop = asyncio.get_running_loop()
+            summary_response = await loop.run_in_executor(
+                None,
+                client.generateStructuredOutput,
+                summary_prompt,
+                news_summary_response_schema
+            )
+            print('Received summary from LLM')
+            
+
+            
+            print('--------------------------------')
+            print(topic.name)
+            print(topic.sources)
+            print(summary_response.get("summary", "No summary"))
+            print(summary_response.get("image", "No image"))
+            
+            return summary_response
+        
+        # Generate all summaries concurrently
+        if persistent_memory:
+            summary_tasks = [generate_topic_summary(topic) for topic in persistent_memory]
+            news_summary_response_items = await asyncio.gather(*summary_tasks)
+        
+        return news_summary_response_items
+        
+    except Exception as error:
+        print('Error generating news summary:', error)
+        raise
