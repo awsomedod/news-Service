@@ -34,7 +34,7 @@ class OpenRouterClient:
         Raises:
             RuntimeError: If the request fails
         """
-        url = f"{self.base_url}/completions"
+        url = f"{self.base_url}/responses"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -45,7 +45,7 @@ class OpenRouterClient:
 
         payload = {
             "model": self.model_id,
-            "prompt": prompt,
+            "input": prompt,
             "max_tokens": 1000
         }
         
