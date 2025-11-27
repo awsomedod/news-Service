@@ -143,6 +143,7 @@ def generate_news():
         })
         
     except Exception as e:
+        app.logger.error(f"Error generating news: {e}")
         return jsonify({'error': str(e)}), 500
 
 
