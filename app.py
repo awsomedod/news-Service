@@ -10,7 +10,7 @@ from agent import suggestNewsSources, provideNews_advanced
 from openrouterClient import OpenRouterClient
 import asyncio
 from datetime import datetime, timezone
-
+import time
 
 _client = secretmanager.SecretManagerServiceClient()
 _project_id = "news-467923" # or hard‐code your project test
@@ -242,6 +242,31 @@ def update_sources_sync():
     filtered_sources = unique_sources
     update_sources(transaction, user_id, filtered_sources)
     return jsonify({'new_sources': filtered_sources}), 200
+
+
+@app.route("/heartbeat")
+def heartbeat():
+    def stream():
+        # Send a message immediately so Cloud Run sees activity
+        yield "data: heartbeat stream started\n\n"
+
+        time_limit = 60 * 5
+        timer = 0
+
+
+        while timer < time_limit:
+            time.sleep(10)  # wait 10 seconds
+
+            timer += 10
+
+            # Send SSE heartbeat comment — keeps Cloud Run + Gunicorn alive
+            yield ":\n\n"
+
+            # Also send a visible message so you can see it working in browser/devtools
+            yield "data: still alive\n\n"
+
+    return Response(stream(), mimetype="text/event-stream")
+
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=8080)
