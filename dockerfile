@@ -26,4 +26,4 @@ EXPOSE 8080
 # Run with Gunicorn.
 # Assumes your Flask app object is named "app" inside app.py (i.e., app = Flask(__name__)).
 # If different, change the last argument to <module>:<app_object>, e.g., "wsgi:app".
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--worker-class", "gevent", "--timeout", "600", "--graceful-timeout", "600", "--keep-alive", "120", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "600", "--graceful-timeout", "600", "--keep-alive", "120", "app:app"]
