@@ -40,8 +40,8 @@ class OpenRouterClient:
             "Content-Type": "application/json"
         }
 
-        if online:
-            self.model_id = self.model_id+ ":online"
+        # if online:
+        #     self.model_id = self.model_id+ ":online"
 
         payload = {
             "model": self.model_id,
