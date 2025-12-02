@@ -61,7 +61,7 @@ class OpenRouterClient:
                 error_detail = exc.response.text
             except:
                 error_detail = str(exc)
-            raise RuntimeError(f"Failed to make OpenRouter request: {exc}. Detail: {error_detail}") from exc
+            raise RuntimeError(f"Failed to make OpenRouter request: {exc}. Detail: {error_detail} Payload: {payload}") from exc
     
     def generateText(self, prompt: str, system_message: Optional[str] = None, online: bool = False) -> str:
         """Generate text from a prompt.
