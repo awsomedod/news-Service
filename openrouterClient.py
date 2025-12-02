@@ -57,7 +57,11 @@ class OpenRouterClient:
             response.raise_for_status()
             return response.json()
         except requests.RequestException as exc:
-            raise RuntimeError(f"Failed to make OpenRouter request: {exc}") from exc
+            try:
+                error_detail = exc.response.text
+            except:
+                error_detail = str(exc)
+            raise RuntimeError(f"Failed to make OpenRouter request: {exc}. Detail: {error_detail}") from exc
     
     def generateText(self, prompt: str, system_message: Optional[str] = None, online: bool = False) -> str:
         """Generate text from a prompt.
