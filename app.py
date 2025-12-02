@@ -31,7 +31,7 @@ db = firestore.client()
 transaction = db.transaction()
 
 OPENROUTER_API_KEY = get_secret("OPENROUTER_API_KEY")
-llm_client = OpenRouterClient(OPENROUTER_API_KEY, "google/gemini-3-pro-preview")
+llm_client = OpenRouterClient(OPENROUTER_API_KEY, "arcee-ai/trinity-mini")
 
 app = Flask(__name__)
 CORS(
