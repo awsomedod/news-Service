@@ -6,7 +6,7 @@ from jwt import ExpiredSignatureError, DecodeError, InvalidTokenError
 from google.cloud import secretmanager
 from flask_cors import CORS
 import json
-from agent import suggestNewsSources, provideNews_advanced
+from agent import suggestNewsSources, provideNews_advanced, generate_news_streaming
 from openrouterClient import OpenRouterClient
 import asyncio
 from datetime import datetime, timezone
@@ -145,6 +145,25 @@ def generate_news():
     except Exception as e:
         print(f"Error generating news: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route("/generate-news-stream", methods=["POST"])
+@token_required
+def generate_news_stream():
+    data = request.get_json()
+    sources = data.get("sources", [])
+
+    if not sources:
+        return jsonify({"error": "sources array is required"}), 400
+
+    return Response(
+        generate_news_streaming(sources, llm_client),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no"   # important for some proxies
+        }
+    )
 
 
 # @app.route("/generate-news-stream", methods=["POST"])

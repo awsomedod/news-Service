@@ -557,3 +557,146 @@ async def provideNews_advanced(sources: list[str], client: OpenRouterClient) -> 
     except Exception as error:
         print('Error generating news summary:', error)
         raise
+
+
+def sse_event(event: str, data: Any) -> str:
+    """Format an SSE event."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+def generate_news_streaming(sources: list[str], client: OpenRouterClient):
+    """
+    Streaming generator for SSE.
+    Steps:
+        1. Categorize news → stream topics discovered
+        2. Summarize topics → stream summaries one by one
+    """
+    try:
+        yield sse_event("status", {"message": "Starting news generation..."})
+
+        # -------------------------------------------------------------------
+        # STEP 1 — CATEGORIZATION (stream topics as they are created)
+        # -------------------------------------------------------------------
+
+        persistent_memory: list[Topic] = []
+        yield sse_event("status", {"message": "Categorizing sources..."})
+
+        html_content = [
+            {"url": src, "content": fetch_webpage_python(src)}
+            for src in sources
+        ]
+
+        for idx, content_item in enumerate(html_content):
+            yield sse_event("status", {
+                "message": f"Processing source {idx+1}/{len(html_content)}...",
+                "url": content_item["url"]
+            })
+
+            prompt = create_categorization_prompt(persistent_memory, content_item["content"])
+            categorization_response = client.generateStructuredOutput(prompt, categorization_response_schema)
+
+            if (not categorization_response or 
+                not categorization_response.get("assignments") or 
+                categorization_response.get("skip", False)):
+                continue
+
+            # Process assignments
+            for assignment in categorization_response["assignments"]:
+                topic_name = assignment["topicName"]
+                is_new = assignment["isNew"]
+                further_readings = assignment.get("furtherReadings", [])
+
+                if not topic_name:
+                    continue
+
+                topic = next((t for t in persistent_memory if t.name.lower() == topic_name.lower()), None)
+
+                if is_new:
+                    if topic:
+                        # add source to existing topic
+                        if content_item["url"] not in topic.sources:
+                            topic.sources.append(content_item["url"])
+                        for url in further_readings:
+                            if url not in topic.sources and isValidUrl(url):
+                                topic.sources.append(url)
+                    else:
+                        # create new topic
+                        new_topic = Topic(name=topic_name, sources=[content_item["url"]])
+                        for url in further_readings:
+                            if isValidUrl(url):
+                                new_topic.sources.append(url)
+
+                        persistent_memory.append(new_topic)
+
+                        # STREAM THE NEW TOPIC IMMEDIATELY
+                        yield sse_event("topic", {
+                            "topicName": new_topic.name,
+                            "sourceCount": len(new_topic.sources),
+                            "totalTopics": len(persistent_memory)
+                        })
+
+                else:
+                    # existing topic case
+                    if topic:
+                        if content_item["url"] not in topic.sources:
+                            topic.sources.append(content_item["url"])
+                        for url in further_readings:
+                            if url not in topic.sources and isValidUrl(url):
+                                topic.sources.append(url)
+                    else:
+                        # create as new if missing
+                        new_topic = Topic(name=topic_name, sources=[content_item["url"]])
+                        for url in further_readings:
+                            if isValidUrl(url):
+                                new_topic.sources.append(url)
+
+                        persistent_memory.append(new_topic)
+
+                        yield sse_event("topic", {
+                            "topicName": new_topic.name,
+                            "sourceCount": len(new_topic.sources),
+                            "totalTopics": len(persistent_memory)
+                        })
+
+        # -------------------------------------------------------------------
+        # STEP 2 — SUMMARIZATION (stream each summary as soon as it's ready)
+        # -------------------------------------------------------------------
+
+        if not persistent_memory:
+            yield sse_event("done", {"message": "No topics discovered."})
+            return
+
+        yield sse_event("status", {
+            "message": "Generating summaries...",
+            "topicCount": len(persistent_memory)
+        })
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def summarize_topic(topic: Topic):
+            html_list = [fetch_webpage_python(src) for src in topic.sources]
+            summary_prompt = create_summary_prompt(topic.name, html_list)
+            return await loop.run_in_executor(
+                None,
+                client.generateStructuredOutput,
+                summary_prompt,
+                news_summary_response_schema
+            )
+
+        tasks = [summarize_topic(topic) for topic in persistent_memory]
+        
+        # Asynchronously gather but stream as they finish
+        for idx, coro in enumerate(asyncio.as_completed(tasks)):
+            summary = loop.run_until_complete(coro)
+
+            # STREAM EACH SUMMARY AS IT FINISHES
+            yield sse_event("summary", {
+                "index": idx,
+                "topic": persistent_memory[idx].name,
+                "summary": summary
+            })
+
+        yield sse_event("done", {"message": "All summaries completed."})
+
+    except Exception as e:
+        yield sse_event("error", {"message": str(e)})
