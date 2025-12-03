@@ -269,14 +269,14 @@ def heartbeat():
         # Send a message immediately so Cloud Run sees activity
         yield "data: heartbeat stream started\n\n"
 
-        time_limit = 60 * 5
+        time_limit = 4 * 5
         timer = 0
 
 
         while timer < time_limit:
             time.sleep(10)  # wait 10 seconds
 
-            timer += 10
+            timer += 5
 
             # Send SSE heartbeat comment — keeps Cloud Run + Gunicorn alive
             yield ":\n\n"
