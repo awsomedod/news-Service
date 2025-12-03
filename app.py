@@ -274,7 +274,7 @@ def heartbeat():
 
 
         while timer < time_limit:
-            time.sleep(10)  # wait 10 seconds
+            time.sleep(5)  # wait 10 seconds
 
             timer += 5
 
