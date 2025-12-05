@@ -697,4 +697,4 @@ def generate_news_streaming(sources: list[str], client: OpenRouterClient, db_upd
         yield sse_event("done", {"message": "All summaries completed."})
 
     except Exception as e:
-        yield sse_event("error", {"message": str(e)})
+        yield sse_event("error", {"error": str(e)})
