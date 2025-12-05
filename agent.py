@@ -563,7 +563,7 @@ def sse_event(event: str, data: Any) -> str:
     """Format an SSE event."""
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
-def generate_news_streaming(sources: list[str], client: OpenRouterClient):
+def generate_news_streaming(sources: list[str], client: OpenRouterClient, db_updater):
     """
     Streaming generator for SSE.
     Steps:
@@ -586,10 +586,6 @@ def generate_news_streaming(sources: list[str], client: OpenRouterClient):
         ]
 
         for idx, content_item in enumerate(html_content):
-            yield sse_event("status", {
-                "message": f"Processing source {idx+1}/{len(html_content)}...",
-                "url": content_item["url"]
-            })
 
             prompt = create_categorization_prompt(persistent_memory, content_item["content"])
             categorization_response = client.generateStructuredOutput(prompt, categorization_response_schema)
@@ -630,7 +626,6 @@ def generate_news_streaming(sources: list[str], client: OpenRouterClient):
                         # STREAM THE NEW TOPIC IMMEDIATELY
                         yield sse_event("topic", {
                             "topicName": new_topic.name,
-                            "sourceCount": len(new_topic.sources),
                             "totalTopics": len(persistent_memory)
                         })
 
@@ -653,7 +648,6 @@ def generate_news_streaming(sources: list[str], client: OpenRouterClient):
 
                         yield sse_event("topic", {
                             "topicName": new_topic.name,
-                            "sourceCount": len(new_topic.sources),
                             "totalTopics": len(persistent_memory)
                         })
 
@@ -684,10 +678,13 @@ def generate_news_streaming(sources: list[str], client: OpenRouterClient):
             )
 
         tasks = [summarize_topic(topic) for topic in persistent_memory]
+        db_summaries = ["" for topic in persistent_memory]
         
         # Asynchronously gather but stream as they finish
         for idx, coro in enumerate(asyncio.as_completed(tasks)):
             summary = loop.run_until_complete(coro)
+
+            db_summaries[idx] = summary
 
             # STREAM EACH SUMMARY AS IT FINISHES
             yield sse_event("summary", {
@@ -696,6 +693,7 @@ def generate_news_streaming(sources: list[str], client: OpenRouterClient):
                 "summary": summary
             })
 
+        db_updater(db_summaries)
         yield sse_event("done", {"message": "All summaries completed."})
 
     except Exception as e:

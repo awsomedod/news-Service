@@ -155,9 +155,12 @@ def generate_news_stream():
 
     if not sources:
         return jsonify({"error": "sources array is required"}), 400
+    
+    def update_news_from_stream(summaries):
+        update_news(transaction, g.user['id'], summaries)
 
     return Response(
-        generate_news_streaming(sources, llm_client),
+        generate_news_streaming(sources, llm_client, update_news_from_stream),
         mimetype="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
