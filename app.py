@@ -156,8 +156,11 @@ def generate_news_stream():
     if not sources:
         return jsonify({"error": "sources array is required"}), 400
     
+    # EXTRACT user id BEFORE Flask closes the context
+    user_id = g.user['id']
+
     def update_news_from_stream(summaries):
-        update_news(transaction, g.user['id'], summaries)
+        update_news(transaction, user_id, summaries)
 
     return Response(
         generate_news_streaming(sources, llm_client, update_news_from_stream),
