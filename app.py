@@ -31,7 +31,7 @@ db = firestore.client()
 transaction = db.transaction()
 
 OPENROUTER_API_KEY = get_secret("OPENROUTER_API_KEY")
-llm_client = OpenRouterClient(OPENROUTER_API_KEY, "google/gemini-2.5-flash-lite")
+llm_client = OpenRouterClient(OPENROUTER_API_KEY, "google/gemini-2.0-flash-lite-001")
 
 app = Flask(__name__)
 CORS(
