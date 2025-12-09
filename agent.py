@@ -571,7 +571,7 @@ def generate_news_streaming(sources: list[str], client: OpenRouterClient, db_upd
         2. Summarize topics → stream summaries one by one
     """
     try:
-        yield sse_event("status", {"message": "Starting news generation..."})
+        yield sse_event("start", {"message": "Starting news generation..."})
 
         # -------------------------------------------------------------------
         # STEP 1 — CATEGORIZATION (stream topics as they are created)
