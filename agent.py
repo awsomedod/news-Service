@@ -100,7 +100,7 @@ def create_summary_prompt(category: str, relevant_html_content: List[str]) -> st
         for index, content in enumerate(relevant_html_content)
     ])
 
-    summary_length = '300'
+    summary_length = '600'
 
     prompt = f"""You are a world-class news summarizer. You will be provided with a topic name and content from multiple news sources related to that topic.
 

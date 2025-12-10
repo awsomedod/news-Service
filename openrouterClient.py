@@ -46,7 +46,7 @@ class OpenRouterClient:
         payload = {
             "model": self.model_id,
             "prompt": prompt,
-            "max_tokens": 1000
+            "max_tokens": 1500
         }
         
         if structured_output:
